@@ -5,7 +5,7 @@ The user initializes the loader with an Elasticsearch index. They then pass in a
 
 ## Usage
 
-Here's an example usage of the ElasticsearchReader.
+Here's an example usage of the ElasticsearchReader to load 100 documents.
 
 ```python
 from llama_index import download_loader
@@ -20,8 +20,8 @@ reader = ElasticsearchReader(
 
 query_dict = {"query": {"match": {"message": {"query": "this is a test"}}}}
 documents = reader.load_data(
-    "<field_name>", query=query_dict, embedding_field="field_name"
+    "<field_name>", query=query_dict, embedding_field="field_name", size=100
 )
 ```
 
-This loader is designed to be used as a way to load data into [LlamaIndex](https://github.com/jerryjliu/gpt_index/tree/main/gpt_index) and/or subsequently used as a Tool in a [LangChain](https://github.com/hwchase17/langchain) Agent. See [here](https://github.com/emptycrown/llama-hub/tree/main) for examples.
+This loader is designed to be used as a way to load data into [LlamaIndex](https://github.com/run-llama/llama_index/tree/main/llama_index) and/or subsequently used as a Tool in a [LangChain](https://github.com/hwchase17/langchain) Agent. See [here](https://github.com/emptycrown/llama-hub/tree/main) for examples.

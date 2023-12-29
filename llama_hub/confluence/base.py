@@ -1,11 +1,12 @@
 """Confluence reader."""
 import logging
 import os
-from retrying import retry
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
+from urllib.parse import unquote
 
 from llama_index.readers.base import BaseReader
 from llama_index.readers.schema.base import Document
+from retrying import retry
 
 CONFLUENCE_API_TOKEN = "CONFLUENCE_API_TOKEN"
 CONFLUENCE_PASSWORD = "CONFLUENCE_PASSWORD"
@@ -42,7 +43,8 @@ class ConfluenceReader(BaseReader):
             from atlassian import Confluence
         except ImportError:
             raise ImportError(
-                "`atlassian` package not found, please run `pip install atlassian-python-api`"
+                "`atlassian` package not found, please run `pip install"
+                " atlassian-python-api`"
             )
         self.confluence: Confluence = None
         if oauth2:
@@ -55,16 +57,20 @@ class ConfluenceReader(BaseReader):
                 user_name = os.getenv(CONFLUENCE_USERNAME)
                 if user_name is None:
                     raise ValueError(
-                        "Must set environment variable `CONFLUENCE_USERNAME` if oauth, oauth2, or `CONFLUENCE_API_TOKEN` are not provided."
+                        "Must set environment variable `CONFLUENCE_USERNAME` if oauth,"
+                        " oauth2, or `CONFLUENCE_API_TOKEN` are not provided."
                     )
                 password = os.getenv(CONFLUENCE_PASSWORD)
                 if password is None:
                     raise ValueError(
-                        "Must set environment variable `CONFLUENCE_PASSWORD` if oauth, oauth2, or `CONFLUENCE_API_TOKEN` are not provided."
+                        "Must set environment variable `CONFLUENCE_PASSWORD` if oauth,"
+                        " oauth2, or `CONFLUENCE_API_TOKEN` are not provided."
                     )
                 self.confluence = Confluence(
                     url=base_url, username=user_name, password=password, cloud=cloud
                 )
+
+        self._next_cursor = None
 
     def load_data(
         self,
@@ -75,6 +81,8 @@ class ConfluenceReader(BaseReader):
         cql: Optional[str] = None,
         include_attachments=False,
         include_children=False,
+        start: Optional[int] = None,
+        cursor: Optional[str] = None,
         limit: Optional[int] = None,
         max_num_results: Optional[int] = None,
     ) -> List[Document]:
@@ -90,6 +98,8 @@ class ConfluenceReader(BaseReader):
             cql (str): Confluence Query Language query, eg 'label="my-label"'
             include_attachments (bool): If True, include attachments.
             include_children (bool): If True, do a DFS of the descendants of each page_id in `page_ids`.  Only compatible with `page_ids`.
+            start (int): Skips over the first n elements. Used only with space_key
+            cursor (str): Skips to the cursor. Used with cql and label, set when the max limit has been hit for cql based search
             limit (int): Deprecated, use `max_num_results` instead.
             max_num_results (int): Maximum number of results to return.  If None, return all results.  Requests are made in batches to achieve the desired number of results.
         """
@@ -106,8 +116,15 @@ class ConfluenceReader(BaseReader):
             != 1
         ):
             raise ValueError(
-                "Must specify exactly one among `space_key`, `page_ids`, `label`, `cql` parameters."
+                "Must specify exactly one among `space_key`, `page_ids`, `label`, `cql`"
+                " parameters."
             )
+
+        if cursor and start:
+            raise ValueError("Must not specify `start` when `cursor` is specified")
+
+        if space_key and cursor:
+            raise ValueError("Must not specify `cursor` when `space_key` is specified")
 
         if page_status and not space_key:
             raise ValueError(
@@ -122,8 +139,9 @@ class ConfluenceReader(BaseReader):
         if limit is not None:
             max_num_results = limit
             logger.warning(
-                "`limit` is deprecated and no longer relates to the Confluence server's API limits.  If "
-                "you wish to limit the number of returned results please use `max_num_results` instead."
+                "`limit` is deprecated and no longer relates to the Confluence server's"
+                " API limits.  If you wish to limit the number of returned results"
+                " please use `max_num_results` instead."
             )
 
         try:
@@ -137,11 +155,15 @@ class ConfluenceReader(BaseReader):
         text_maker.ignore_links = True
         text_maker.ignore_images = True
 
+        if not start:
+            start = 0
+
         pages: List = []
         if space_key:
             pages.extend(
                 self._get_data_with_paging(
                     self.confluence.get_all_pages_from_space,
+                    start=start,
                     max_num_results=max_num_results,
                     space=space_key,
                     status=page_status,
@@ -152,6 +174,8 @@ class ConfluenceReader(BaseReader):
         elif label:
             pages.extend(
                 self._get_cql_data_with_paging(
+                    start=start,
+                    cursor=cursor,
                     cql=f'type="page" AND label="{label}"',
                     max_num_results=max_num_results,
                     expand="body.storage.value",
@@ -160,6 +184,8 @@ class ConfluenceReader(BaseReader):
         elif cql:
             pages.extend(
                 self._get_cql_data_with_paging(
+                    start=start,
+                    cursor=cursor,
                     cql=cql,
                     max_num_results=max_num_results,
                     expand="body.storage.value",
@@ -220,8 +246,9 @@ class ConfluenceReader(BaseReader):
                     break
         return ret
 
-    def _get_data_with_paging(self, paged_function, max_num_results=50, **kwargs):
-        start = 0
+    def _get_data_with_paging(
+        self, paged_function, start=0, max_num_results=50, **kwargs
+    ):
         max_num_remaining = max_num_results
         ret = []
         while True:
@@ -235,17 +262,21 @@ class ConfluenceReader(BaseReader):
                 and len(results) >= max_num_remaining
             ):
                 break
+
             start += len(results)
             if max_num_remaining is not None:
                 max_num_remaining -= len(results)
         return ret
 
     def _get_cql_data_with_paging(
-        self, cql, max_num_results=50, expand="body.storage.value"
+        self, cql, start=0, cursor=None, max_num_results=50, expand="body.storage.value"
     ):
         max_num_remaining = max_num_results
         ret = []
-        params = {"cql": cql, "start": 0, "expand": expand}
+        params = {"cql": cql, "start": start, "expand": expand}
+        if cursor:
+            params["cursor"] = unquote(cursor)
+
         if max_num_results is not None:
             params["limit"] = max_num_remaining
         while True:
@@ -256,22 +287,32 @@ class ConfluenceReader(BaseReader):
 
             params["start"] += len(results["results"])
 
-            if max_num_results is not None:
-                params["limit"] -= len(results["results"])
-                if params["limit"] <= 0:
-                    break
-
             next_url = (
                 results["_links"]["next"] if "next" in results["_links"] else None
             )
             if not next_url:
+                self._next_cursor = None
                 break
-            cursor = next_url.split("cursor=")[1].split("&")[0]
-            params["cursor"] = cursor
+
+            if "cursor=" in next_url:  # On confluence Server this is not set
+                cursor = next_url.split("cursor=")[1].split("&")[0]
+                params["cursor"] = unquote(cursor)
+
+            if max_num_results is not None:
+                params["limit"] -= len(results["results"])
+                if params["limit"] <= 0:
+                    self._next_cursor = cursor
+                    break
 
         return ret
 
-    @retry(stop_max_attempt_number=4, wait_fixed=4000)
+    def get_next_cursor(self):
+        """
+        Returns: The last set cursor from a cql based search
+        """
+        return self._next_cursor
+
+    @retry(stop_max_attempt_number=1, wait_fixed=4)
     def _get_data_with_retry(self, function, **kwargs):
         return function(**kwargs)
 
@@ -284,7 +325,14 @@ class ConfluenceReader(BaseReader):
             attachment_texts
         )
         return Document(
-            text=text, doc_id=page["id"], extra_info={"title": page["title"]}
+            text=text,
+            doc_id=page["id"],
+            extra_info={
+                "title": page["title"],
+                "page_id": page["id"],
+                "status": page["status"],
+                "url": self.base_url + page["_links"]["webui"],
+            },
         )
 
     def process_attachment(self, page_id):
@@ -292,8 +340,8 @@ class ConfluenceReader(BaseReader):
             pass
         except ImportError:
             raise ImportError(
-                "`pytesseract` or `pdf2image` or `Pillow` package not found, please run `pip install "
-                "pytesseract pdf2image Pillow`"
+                "`pytesseract` or `pdf2image` or `Pillow` package not found, please run"
+                " `pip install pytesseract pdf2image Pillow`"
             )
 
         # depending on setup you may also need to set the correct path for poppler and tesseract
@@ -332,7 +380,8 @@ class ConfluenceReader(BaseReader):
             from pdf2image import convert_from_bytes  # type: ignore
         except ImportError:
             raise ImportError(
-                "`pytesseract` or `pdf2image` package not found, please run `pip install pytesseract pdf2image`"
+                "`pytesseract` or `pdf2image` package not found, please run `pip"
+                " install pytesseract pdf2image`"
             )
 
         import pytesseract  # type: ignore
@@ -360,12 +409,14 @@ class ConfluenceReader(BaseReader):
 
     def process_image(self, link):
         try:
+            from io import BytesIO  # type: ignore
+
             import pytesseract  # type: ignore
             from PIL import Image  # type: ignore
-            from io import BytesIO  # type: ignore
         except ImportError:
             raise ImportError(
-                "`pytesseract` or `Pillow` package not found, please run `pip install pytesseract Pillow`"
+                "`pytesseract` or `Pillow` package not found, please run `pip install"
+                " pytesseract Pillow`"
             )
 
         response = self.confluence.request(path=link, absolute=True)
@@ -386,8 +437,9 @@ class ConfluenceReader(BaseReader):
 
     def process_doc(self, link):
         try:
-            import docx2txt  # type: ignore
             from io import BytesIO  # type: ignore
+
+            import docx2txt  # type: ignore
         except ImportError:
             raise ImportError(
                 "`docx2txt` package not found, please run `pip install docx2txt`"
@@ -435,14 +487,16 @@ class ConfluenceReader(BaseReader):
 
     def process_svg(self, link):
         try:
+            from io import BytesIO  # type: ignore
+
             import pytesseract  # type: ignore
             from PIL import Image  # type: ignore
-            from io import BytesIO  # type: ignore
-            from svglib.svglib import svg2rlg  # type: ignore
             from reportlab.graphics import renderPM  # type: ignore
+            from svglib.svglib import svg2rlg  # type: ignore
         except ImportError:
             raise ImportError(
-                "`pytesseract`, `Pillow`, or `svglib` package not found, please run `pip install pytesseract Pillow svglib`"
+                "`pytesseract`, `Pillow`, or `svglib` package not found, please run"
+                " `pip install pytesseract Pillow svglib`"
             )
 
         response = self.confluence.request(path=link, absolute=True)

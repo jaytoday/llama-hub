@@ -19,7 +19,7 @@ and set your [Apify API token](https://console.apify.com/account/integrations) i
 
 ```python
 from llama_index import download_loader
-from llama_index.readers.schema.base import Document
+from llama_index.readers.schema import Document
 
 # Converts a single record from the Actor's resulting dataset to the LlamaIndex format
 def tranform_dataset_item(item):
@@ -35,12 +35,12 @@ ApifyActor = download_loader("ApifyActor")
 reader = ApifyActor("<My Apify API token>")
 documents = reader.load_data(
     actor_id="apify/website-content-crawler",
-    run_input={"startUrls": [{"url": "https://gpt-index.readthedocs.io/en/latest"}]}
+    run_input={"startUrls": [{"url": "https://gpt-index.readthedocs.io/en/latest"}]},
     dataset_mapping_function=tranform_dataset_item,
 )
 ```
 
 This loader is designed to be used as a way to load data into
-[LlamaIndex](https://github.com/jerryjliu/gpt_index/tree/main/gpt_index) and/or subsequently
+[LlamaIndex](https://github.com/run-llama/llama_index/tree/main/llama_index) and/or subsequently
 used as a Tool in a [LangChain](https://github.com/hwchase17/langchain) Agent.
 See [here](https://github.com/emptycrown/llama-hub/tree/main) for examples.

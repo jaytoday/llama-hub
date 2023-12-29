@@ -1,16 +1,19 @@
 """Code Interpreter tool spec."""
 
-from llama_index.tools.tool_spec.base import BaseToolSpec
-from llama_index.llms.openai import OpenAI
-from llama_index.llms.base import LLM, ChatMessage, MessageRole
-from typing import Optional, List
-import requests
-import urllib.parse
-import sys
 import subprocess
+import sys
+
+from llama_index.tools.tool_spec.base import BaseToolSpec
+
 
 class CodeInterpreterToolSpec(BaseToolSpec):
-    """Code Interpreter tool spec."""
+    """Code Interpreter tool spec.
+
+    WARNING: This tool provides the Agent access to the `subprocess.run` command.
+    Arbitrary code execution is possible on the machine running this tool.
+    This tool is not recommended to be used in a production setting, and would require heavy sandboxing or virtual machines
+
+    """
 
     spec_functions = ["code_interpreter"]
 
@@ -27,5 +30,7 @@ class CodeInterpreterToolSpec(BaseToolSpec):
 
         It is not possible to return graphics or other complicated data from this function. If the user cannot see the output, save it to a file and tell the user.
         """
-        result = subprocess.run([sys.executable, '-c', code], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return f'StdOut:\n{result.stdout}\nStdErr:\n{result.stderr}'
+        result = subprocess.run(
+            [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        return f"StdOut:\n{result.stdout}\nStdErr:\n{result.stderr}"

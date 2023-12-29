@@ -5,3 +5,8 @@
 .venv
 **/.DS_Store
 .vscode
+.idea/
+llama-hub.iml
+llamahub/
+img_cache/
+.cache/

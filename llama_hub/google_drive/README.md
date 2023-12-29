@@ -20,10 +20,12 @@ You can also filter the files by the mimeType e.g.: `mime_types=["application/vn
 
 ## Usage
 
-We need `credentials.json` and `client_secrets.json` files to use this reader.
+We need `credentials.json` file to use this reader.
 
-1. You need to get your `credentials.json` file by following the steps mentioned [here](https://developers.google.com/drive/api/v3/quickstart/python)
-2. Create duplicate file of `credentials.json` with name `client_secrets.json` which will be used by pydrive for downloading files.
+1. You need to create a service account folllowing the steps mentioned [here](https://cloud.google.com/iam/docs/keys-create-delete)
+2. Get your json file and rename to `credentials.json` and move to the project root
+
+> Note: If you are not using Google Workspaces (formerly GSuite), You'll need to share your document making it public, or inviting your service account as an reader/editor of the folder or file.
 
 Finally, make sure you enable "Google Drive API" in the console of your Google App.
 
@@ -41,4 +43,4 @@ documents = loader.load_data(folder_id="folderid")
 documents = loader.load_data(file_ids=["fileid1", "fileid2"])
 ```
 
-This loader is designed to be used as a way to load data into [LlamaIndex](https://github.com/jerryjliu/gpt_index/tree/main/gpt_index) and/or subsequently used as a Tool in a [LangChain](https://github.com/hwchase17/langchain) Agent. See [here](https://github.com/emptycrown/llama-hub/tree/main) for examples.
+This loader is designed to be used as a way to load data into [LlamaIndex](https://github.com/run-llama/llama_index/tree/main/llama_index) and/or subsequently used as a Tool in a [LangChain](https://github.com/hwchase17/langchain) Agent. See [here](https://github.com/emptycrown/llama-hub/tree/main) for examples.
